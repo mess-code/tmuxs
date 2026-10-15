@@ -1,7 +1,7 @@
 //! Rendering. Reads `App`, never mutates anything except the table scroll state.
 
 use crate::app::App;
-use crate::parse::{Session, format_age, window_summary};
+use crate::parse::{Session, format_age};
 use crate::popup::{Field, Popup};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Position, Rect};
@@ -14,10 +14,9 @@ const EMPTY_HINT: &str = "No tmux sessions. Press Ctrl-N to create one.";
 const NO_MATCH_HINT: &str = "No sessions match the search.";
 
 pub fn render(frame: &mut Frame, app: &mut App) {
-    let [search_area, table_area, summary_area, status_area] = Layout::vertical([
+    let [search_area, table_area, status_area] = Layout::vertical([
         Constraint::Length(3),
         Constraint::Min(3),
-        Constraint::Length(1),
         Constraint::Length(1),
     ])
     .areas(frame.area());
@@ -47,11 +46,6 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         render_table(frame, app, table_area);
     }
 
-    let summary = app.selected_session().map(window_summary);
-    frame.render_widget(
-        Paragraph::new(summary.unwrap_or_default()).style(Style::new().fg(Color::Cyan)),
-        summary_area,
-    );
     frame.render_widget(Paragraph::new(status_line(app)).centered(), status_area);
 
     if let Some(popup) = &app.popup {
@@ -362,7 +356,7 @@ mod tests {
     }
 
     #[test]
-    fn table_shows_panes_activity_directory_and_window_summary() {
+    fn table_shows_panes_activity_and_directory() {
         let mut app = App::default();
         app.now = 10_000;
         app.set_sessions(vec![full_session("$1", "work", 10_000 - 12 * 60, "/tmp/x")]);
@@ -374,7 +368,6 @@ mod tests {
             "4 (2 busy · 1 idle · 1 dead)",
             "12m",
             "/tmp/x",
-            "0:zsh 1:claude 2:old",
         ] {
             assert!(text.contains(expected), "missing {expected:?} in:\n{text}");
         }

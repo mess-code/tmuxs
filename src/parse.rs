@@ -90,19 +90,6 @@ pub fn shell_basename(shell: &str) -> Option<String> {
     (!name.is_empty()).then(|| name.to_string())
 }
 
-/// One-line summary of a Session's Windows, such as `0:zsh 1:claude`.
-pub fn window_summary(session: &Session) -> String {
-    let mut windows: Vec<(u32, &str)> = session
-        .panes
-        .iter()
-        .map(|p| (p.window_index, p.window_name.as_str()))
-        .collect();
-    windows.sort();
-    windows.dedup_by_key(|w| w.0);
-    let parts: Vec<String> = windows.iter().map(|(i, n)| format!("{i}:{n}")).collect();
-    parts.join(" ")
-}
-
 /// Short relative age such as `5s`, `12m`, `3h` or `2d`.
 pub fn format_age(now: u64, activity: u64) -> String {
     let secs = now.saturating_sub(activity);
@@ -371,8 +358,6 @@ mod tests {
                 dead: 1
             }
         );
-        assert_eq!(window_summary(&s), "0:zsh 1:claude");
-        assert_eq!(window_summary(&session("$1", "b")), "");
     }
 
     #[test]

@@ -6,8 +6,7 @@ From top to bottom:
 
 1. Search bar (3 rows, always focused). Typing edits the Search query.
 2. Table of Sessions, or an empty-state message, or a red tmux error.
-3. One line with the selected Session's Windows, for example `0:zsh 1:claude 2:vim`.
-4. Status bar: key hints (or the latest result message) followed by `| iTerm2 mode: ON` or `| iTerm2 mode: OFF`.
+3. Status bar: key hints (or the latest result message) followed by `| iTerm2 mode: ON` or `| iTerm2 mode: OFF`.
 
 ### Table columns
 

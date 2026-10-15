@@ -308,7 +308,6 @@ pub(crate) mod tests {
             "{work:?}"
         );
         assert_eq!(work.panes.len(), 2);
-        assert_eq!(crate::parse::window_summary(&work), "0:main 1:job");
         assert!(work.activity > 0);
         assert!(!work.path.is_empty());
     }

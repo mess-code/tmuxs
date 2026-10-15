@@ -9,11 +9,11 @@
 | `main.rs` | clap `Args` (`--cc`, `--no-cc`, help text with the environment variables), resolves the initial iTerm2 mode, installs the panic hook, sets up the terminal, runs the event loop, restores the terminal. |
 | `app.rs` | `App`: all UI state (Sessions, filtered rows, selection, Search query, message, open Popup, iTerm2 mode, pending action, attach request) and `handle_key`. No terminal or tmux access, so it is unit-testable. |
 | `popup.rs` | `Popup` (rename, create, kill), its key handling and `Action` (what to change in tmux). A Popup never talks to tmux. |
-| `parse.rs` | Pure functions: parse `list-sessions` / `list-panes` output, Pane state, Window summary, Activity age, substring filter, sorting. |
+| `parse.rs` | Pure functions: parse `list-sessions` / `list-panes` output, Pane state, Activity age, substring filter, sorting. |
 | `tmux.rs` | `Tmux`: runs `tmux` via `std::process::Command`, honors `TMUXS_SOCKET` (`-L`), lists, creates, renames and kills Sessions by `$id`. `TmuxError` distinguishes "tmux not installed" from other failures. |
 | `attach.rs` | Pure `attach_command` (program and arguments) and `is_nested` (`$TMUX` check) with the refusal message. |
 | `settings.rs` | iTerm2 mode resolution (`resolve_iterm2_mode`) and load/save of `settings.toml`. |
-| `ui.rs` | Rendering with ratatui: search bar, table or empty state or error, Window summary line, Status bar, Popups. |
+| `ui.rs` | Rendering with ratatui: search bar, table or empty state or error, Status bar, Popups. |
 | `events.rs` | The event loop, running a pending `Action`, and spawn-and-return Attach. |
 | `terminal.rs` | Raw mode and alternate screen setup/restore and the panic hook. |
 
