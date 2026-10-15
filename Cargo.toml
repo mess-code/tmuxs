@@ -2,6 +2,12 @@
 name = "tmuxs"
 version = "0.1.0"
 edition = "2024"
+description = "A terminal picker for tmux sessions, in the spirit of sshs, with an iTerm2 control-mode toggle"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/mess-code/tmuxs"
+keywords = ["tmux", "tui", "terminal", "iterm2", "sessions"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 clap = { version = "4.6.7", features = ["derive"] }
