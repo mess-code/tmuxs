@@ -6,10 +6,10 @@
 
 **Status:** ready-for-agent
 
-- [ ] `cargo fmt --check`, `cargo clippy -- -D warnings` and `cargo test` pass
-- [ ] Parsing tests cover names with spaces, dots, colons and other unusual characters, and many Sessions
-- [ ] TestBackend tests cover the list state and the empty state
-- [ ] A real-tmux test on `TMUXS_SOCKET=tmuxs-test` creates Sessions and checks the listing, then cleans up with `tmux -L tmuxs-test kill-server`
-- [ ] Sessions `cat` and `category` are both listed and distinguishable by id
-- [ ] The panic hook restores the terminal (verified by a test or a documented manual check)
-- [ ] Committed on `main` in English with the Co-Authored-By line
+- [x] `cargo fmt --check`, `cargo clippy -- -D warnings` and `cargo test` pass
+- [x] Parsing tests cover names with spaces, dots, colons and other unusual characters, and many Sessions
+- [x] TestBackend tests cover the list state and the empty state
+- [x] A real-tmux test on `TMUXS_SOCKET=tmuxs-test` creates Sessions and checks the listing, then cleans up with `tmux -L tmuxs-test kill-server`
+- [x] Sessions `cat` and `category` are both listed and distinguishable by id
+- [x] The panic hook restores the terminal (verified by a test or a documented manual check)
+- [x] Committed on `main` in English with the Co-Authored-By line
