@@ -1,0 +1,14 @@
+# 05: Documentation and release checks
+
+**What to build:** A short root `README.md` linking to a `docs/` folder: index (what it is, install, quick start), usage (workflows, flags, environment variables `TMUXS_SOCKET`, `TMUXS_CC`, `TMUXS_CONFIG_DIR`), key bindings (matching the code exactly), iTerm2 mode (what `-CC` is, what the toggle does, hiding the control window via "Automatically bury the tmux client session after connecting", the pitfall that closing an iTerm2 tab, window or session kills the matching tmux window or Session while Shell > tmux > Detach keeps it running, and a list of names that could not be verified), architecture (modules, data flow, why the terminal is restored before spawning tmux), development (build, test, lint, safe testing with the two test variables) and troubleshooting (no server, running inside tmux, garbled terminal after a crash, settings problems). Keep the existing `docs/agents/` folder. Document only verified behavior and mark the rest unverified. Cross-check keys, flags and variables against the implementation. Finish with `cargo build --release`, install instructions (`cargo install --path .`, no shell profile edits), and the final short report: project path, test results, what was imitated from `sshs`, deviations from the original prompt, what was tested automatically, and what the owner must try by hand (attach ON and OFF, toggle key, appearance in iTerm2, control window hidden with the bury setting).
+
+**Blocked by:** 02, 03, 04
+
+**Status:** ready-for-agent
+
+- [ ] All docs are in English and every listed page exists
+- [ ] A documented cross-check shows keys, flags and environment variables match the code
+- [ ] Unverified items are explicitly marked
+- [ ] `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test` and `cargo build --release` pass
+- [ ] Final report written, with the manual verification checklist
+- [ ] Committed on `main`
