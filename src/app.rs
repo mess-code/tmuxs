@@ -1,6 +1,8 @@
 //! Application state and key handling. No terminal or tmux access here.
 
+use crate::attach::{NESTED_MESSAGE, is_nested};
 use crate::parse::Session;
+use crate::settings::Settings;
 use crate::tmux::TmuxError;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::widgets::TableState;
@@ -12,9 +14,27 @@ pub struct App {
     /// Set when tmux cannot be queried (for example tmux is not installed).
     pub error: Option<String>,
     pub should_quit: bool,
+    /// Whether Attach uses tmux control mode (`-CC`).
+    pub iterm2_mode: bool,
+    /// A result message for the Status bar, cleared by the next key press.
+    pub message: Option<String>,
+    /// The Session id to Attach to; `events::run` takes it and spawns tmux.
+    pub attach_request: Option<String>,
+    settings: Settings,
+    /// The value of `$TMUX`, passed in so the nested check is testable.
+    tmux_env: Option<String>,
 }
 
 impl App {
+    pub fn new(settings: Settings, iterm2_mode: bool, tmux_env: Option<String>) -> Self {
+        Self {
+            settings,
+            iterm2_mode,
+            tmux_env,
+            ..Self::default()
+        }
+    }
+
     /// Replaces the Session list, keeping the selection on the same Session id.
     pub fn set_sessions(&mut self, sessions: Vec<Session>) {
         let selected_id = self.selected_session().map(|s| s.id.clone());
@@ -50,8 +70,12 @@ impl App {
         if key.kind != KeyEventKind::Press {
             return;
         }
+        self.message = None;
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         match key.code {
+            KeyCode::Enter => self.request_attach(),
+            KeyCode::F(3) => self.toggle_iterm2_mode(),
+            KeyCode::Char('t') if ctrl => self.toggle_iterm2_mode(),
             KeyCode::Esc => self.should_quit = true,
             KeyCode::Char('c') if ctrl => self.should_quit = true,
             KeyCode::Up => self.move_selection(-1),
@@ -59,6 +83,24 @@ impl App {
             KeyCode::Char('k') if ctrl => self.move_selection(-1),
             KeyCode::Char('j') if ctrl => self.move_selection(1),
             _ => {}
+        }
+    }
+
+    fn request_attach(&mut self) {
+        let Some(id) = self.selected_session().map(|s| s.id.clone()) else {
+            return;
+        };
+        if is_nested(self.tmux_env.as_deref()) {
+            self.message = Some(NESTED_MESSAGE.into());
+        } else {
+            self.attach_request = Some(id);
+        }
+    }
+
+    fn toggle_iterm2_mode(&mut self) {
+        self.iterm2_mode = !self.iterm2_mode;
+        if let Err(error) = self.settings.save_iterm2_mode(self.iterm2_mode) {
+            self.message = Some(format!("Could not save settings: {error}"));
         }
     }
 
@@ -168,6 +210,66 @@ mod tests {
         assert_eq!(app.selected_session().unwrap().id, "$0");
         app.set_sessions(vec![]);
         assert!(app.selected_session().is_none());
+    }
+
+    fn app_in(dir: &std::path::Path, tmux_env: Option<&str>) -> App {
+        let mut app = App::new(
+            Settings::new(dir.to_str()),
+            false,
+            tmux_env.map(String::from),
+        );
+        app.set_sessions(vec![session("$4", "a")]);
+        app
+    }
+
+    #[test]
+    fn enter_requests_attach_to_the_selected_session_id() {
+        let mut app = app_in(&std::env::temp_dir(), None);
+        app.handle_key(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(app.attach_request.as_deref(), Some("$4"));
+        let mut empty = App::default();
+        empty.handle_key(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(empty.attach_request.is_none());
+    }
+
+    #[test]
+    fn enter_is_refused_inside_tmux_in_both_modes() {
+        for mode in [false, true] {
+            let mut app = app_in(&std::env::temp_dir(), Some("/tmp/tmux-1/default,1,0"));
+            app.iterm2_mode = mode;
+            app.handle_key(key(KeyCode::Enter, KeyModifiers::NONE));
+            assert!(app.attach_request.is_none());
+            assert_eq!(app.message.as_deref(), Some(NESTED_MESSAGE));
+            app.handle_key(key(KeyCode::Down, KeyModifiers::NONE));
+            assert!(app.message.is_none());
+        }
+    }
+
+    #[test]
+    fn ctrl_t_and_f3_toggle_and_save_to_the_settings_dir() {
+        let dir = std::env::temp_dir().join("tmuxs-test-toggle");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut app = app_in(&dir, None);
+        let saved = || Settings::new(dir.to_str()).load_iterm2_mode();
+        app.handle_key(key(KeyCode::Char('t'), KeyModifiers::CONTROL));
+        assert!(app.iterm2_mode);
+        assert_eq!(saved(), Some(true));
+        app.handle_key(key(KeyCode::F(3), KeyModifiers::NONE));
+        assert!(!app.iterm2_mode);
+        assert_eq!(saved(), Some(false));
+        assert!(app.message.is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_failed_save_shows_a_message_and_keeps_the_toggle() {
+        let blocker = std::env::temp_dir().join("tmuxs-test-toggle-blocker");
+        std::fs::write(&blocker, "").unwrap();
+        let mut app = app_in(&blocker, None);
+        app.handle_key(key(KeyCode::F(3), KeyModifiers::NONE));
+        assert!(app.iterm2_mode);
+        assert!(app.message.unwrap().starts_with("Could not save settings"));
+        let _ = std::fs::remove_file(&blocker);
     }
 
     #[test]

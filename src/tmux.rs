@@ -44,6 +44,10 @@ impl Tmux {
         Self::new(std::env::var(SOCKET_ENV).ok())
     }
 
+    pub fn socket(&self) -> Option<&str> {
+        self.socket.as_deref()
+    }
+
     /// A `tmux` command, already pointed at the configured socket.
     pub fn command(&self) -> Command {
         let mut command = Command::new("tmux");

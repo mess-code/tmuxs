@@ -6,7 +6,8 @@ use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::{Block, Cell, HighlightSpacing, Paragraph, Row, Table};
 
-const HINTS: &str = "(Esc) quit | (↑/↓, ctrl+k/ctrl+j) move";
+const HINTS: &str =
+    "(Esc) quit | (↑/↓, ctrl+k/ctrl+j) move | (Enter) attach | (ctrl+t/F3) iTerm2 mode";
 const EMPTY_HINT: &str = "No tmux sessions. Press Ctrl-N to create one.";
 
 pub fn render(frame: &mut Frame, app: &mut App) {
@@ -31,7 +32,14 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         render_table(frame, app, table_area);
     }
 
-    frame.render_widget(Paragraph::new(HINTS).centered(), status_area);
+    frame.render_widget(Paragraph::new(status_line(app)).centered(), status_area);
+}
+
+/// The hints and the iTerm2 mode, or the latest result message instead of the hints.
+fn status_line(app: &App) -> String {
+    let mode = if app.iterm2_mode { "ON" } else { "OFF" };
+    let left = app.message.as_deref().unwrap_or(HINTS);
+    format!("{left} | iTerm2 mode: {mode}")
 }
 
 fn render_table(frame: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
@@ -72,7 +80,11 @@ mod tests {
     use ratatui::backend::TestBackend;
 
     fn draw(app: &mut App) -> (Terminal<TestBackend>, String) {
-        let mut terminal = Terminal::new(TestBackend::new(60, 8)).unwrap();
+        draw_wide(app, 60)
+    }
+
+    fn draw_wide(app: &mut App, width: u16) -> (Terminal<TestBackend>, String) {
+        let mut terminal = Terminal::new(TestBackend::new(width, 8)).unwrap();
         terminal.draw(|f| render(f, app)).unwrap();
         let buffer = terminal.backend().buffer();
         let text = (0..buffer.area.height)
@@ -150,7 +162,26 @@ mod tests {
 
     #[test]
     fn status_bar_shows_key_hints() {
-        let (_, text) = draw(&mut App::default());
+        let (_, text) = draw_wide(&mut App::default(), 140);
         assert!(text.contains("(Esc) quit"));
+    }
+
+    #[test]
+    fn status_bar_shows_the_iterm2_mode() {
+        for (mode, label) in [(true, "iTerm2 mode: ON"), (false, "iTerm2 mode: OFF")] {
+            let mut app = App::default();
+            app.iterm2_mode = mode;
+            let (_, text) = draw_wide(&mut app, 140);
+            assert!(text.contains(label), "{text}");
+        }
+    }
+
+    #[test]
+    fn status_bar_shows_a_message_and_keeps_the_mode() {
+        let mut app = App::default();
+        app.message = Some(crate::attach::NESTED_MESSAGE.into());
+        let (_, text) = draw_wide(&mut app, 140);
+        assert!(text.contains("Detach first"), "{text}");
+        assert!(text.contains("iTerm2 mode: OFF"), "{text}");
     }
 }
