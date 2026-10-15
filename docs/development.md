@@ -118,3 +118,13 @@ These cannot be automated and were not tried by hand:
 7. A real `-CC` attach by id (`tmux -CC attach -t '$N'`): automatically only the argument parsing is proven.
 8. The panic hook: add `panic!()` right after `terminal::setup()`, run in a terminal, confirm the shell stays usable (then remove it).
 9. Running `tmuxs` inside tmux: Enter shows the detach-first message in both modes.
+
+## Re-recording the README demo
+
+The GIF in the README is generated from `docs/demo.tape` with [VHS](https://github.com/charmbracelet/vhs) (`brew install vhs`). From the repository root:
+
+```sh
+cargo build --release && vhs docs/demo.tape
+```
+
+The tape uses its own throwaway tmux server (`TMUXS_SOCKET=tmuxs-demo`) and a temporary `TMUXS_CONFIG_DIR`, then kills that server and removes its demo directory at the end, so it never touches your real Sessions or settings. It renders in VHS's own terminal window, so it does not show iTerm2 or `tmux -CC`.

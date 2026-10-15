@@ -8,8 +8,7 @@ A small terminal picker for tmux Sessions, in the spirit of [`sshs`](https://git
 
 I built it to keep long-running agent work in tmux without any other GUI tool, used together with iTerm2.
 
-<!-- Screenshot: add docs/images/screenshot.png, then replace this comment with
-     ![tmuxs in iTerm2](docs/images/screenshot.png) -->
+![tmuxs demo](docs/images/demo.gif)
 
 ## Features
 
