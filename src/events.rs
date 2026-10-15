@@ -232,7 +232,9 @@ mod tests {
     #[test]
     fn kill_confirmation_warns_about_iterm2_tabs_only_in_iterm2_mode() {
         for (mode, warned) in [(true, true), (false, false)] {
-            let mut rig = Rig::new("tmuxs-test-kill-warn", &["cat"]);
+            // A socket per mode: a server that is still shutting down must not be reused.
+            let socket = format!("tmuxs-test-kill-warn-{mode}");
+            let mut rig = Rig::new(&socket, &["cat"]);
             rig.app.iterm2_mode = mode;
             rig.ctrl('x');
             let text = rig.screen();
