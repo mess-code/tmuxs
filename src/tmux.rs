@@ -1,6 +1,8 @@
 //! Runs tmux through `std::process::Command`.
 
-use crate::parse::{SESSION_FORMAT, Session, parse_sessions, sort_sessions};
+use crate::parse::{
+    PANE_FORMAT, SESSION_FORMAT, Session, assign_panes, parse_panes, parse_sessions, sort_sessions,
+};
 use std::fmt;
 use std::io::ErrorKind;
 use std::process::Command;
@@ -73,7 +75,19 @@ impl Tmux {
         }
         let mut sessions = parse_sessions(&String::from_utf8_lossy(&output.stdout));
         sort_sessions(&mut sessions);
+        assign_panes(&mut sessions, self.list_panes());
         Ok(sessions)
+    }
+
+    /// Lists the Panes of every Session. Any failure means no Pane data.
+    fn list_panes(&self) -> Vec<crate::parse::Pane> {
+        self.command()
+            .args(["list-panes", "-a", "-F", PANE_FORMAT])
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| parse_panes(&String::from_utf8_lossy(&output.stdout)))
+            .unwrap_or_default()
     }
 }
 
@@ -82,7 +96,7 @@ fn is_no_server(stderr: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     #[test]
@@ -108,16 +122,16 @@ mod tests {
     }
 
     /// Kills the throwaway server when the test ends, even on failure.
-    struct TestServer(Tmux);
+    pub(crate) struct TestServer(pub(crate) Tmux);
 
     impl TestServer {
-        fn start(socket: &str) -> Self {
+        pub(crate) fn start(socket: &str) -> Self {
             let server = TestServer(Tmux::new(Some(socket.into())));
             server.tmux(&["kill-server"]);
             server
         }
 
-        fn tmux(&self, args: &[&str]) {
+        pub(crate) fn tmux(&self, args: &[&str]) {
             let output = self.0.command().args(args).output().unwrap();
             assert!(
                 output.status.success() || args == ["kill-server"],
@@ -157,5 +171,41 @@ mod tests {
         assert_eq!(cat.windows, 2);
         assert_eq!(category.windows, 1);
         assert!(sessions.iter().all(|s| !s.is_attached()));
+    }
+
+    #[test]
+    fn counts_busy_and_idle_panes_of_a_real_session() {
+        let server = TestServer::start("tmuxs-test-panes");
+        // One idle pane (the default shell) and one busy pane (`sleep`).
+        server.tmux(&["new-session", "-d", "-s", "work", "-n", "main"]);
+        server.tmux(&["new-window", "-t", "=work:", "-n", "job", "sleep 300"]);
+        server.tmux(&["new-session", "-d", "-s", "other"]);
+        let shell = std::env::var("SHELL")
+            .ok()
+            .and_then(|s| crate::parse::shell_basename(&s));
+
+        // The foreground command can lag behind pane creation, so poll briefly.
+        let mut counts = Default::default();
+        let mut work = None;
+        for _ in 0..50 {
+            let sessions = server.0.list_sessions().unwrap();
+            let found = sessions.into_iter().find(|s| s.name == "work").unwrap();
+            counts = found.pane_counts(shell.as_deref());
+            work = Some(found);
+            if counts.busy == 1 && counts.idle == 1 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        let work = work.unwrap();
+        assert_eq!(
+            (counts.busy, counts.idle, counts.dead),
+            (1, 1, 0),
+            "{work:?}"
+        );
+        assert_eq!(work.panes.len(), 2);
+        assert_eq!(crate::parse::window_summary(&work), "0:main 1:job");
+        assert!(work.activity > 0);
+        assert!(!work.path.is_empty());
     }
 }
