@@ -3,6 +3,14 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to release (e.g. v0.1.0)
+        required: true
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
 
 permissions:
   contents: write
@@ -19,6 +27,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
 
       - name: Install Rust target
         run: rustup target add ${{ matrix.target }}
@@ -28,7 +38,7 @@ jobs:
 
       - name: Package
         run: |
-          name="tmuxs-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          name="tmuxs-${TAG}-${{ matrix.target }}"
           mkdir "$name"
           cp target/${{ matrix.target }}/release/tmuxs README.md LICENSE "$name/"
           tar -czf "$name.tar.gz" "$name"
@@ -51,5 +61,6 @@ jobs:
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.TAG }}
           files: dist/*
           generate_release_notes: true
