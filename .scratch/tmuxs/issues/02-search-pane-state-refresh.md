@@ -6,9 +6,9 @@
 
 **Status:** ready-for-agent
 
-- [ ] Pure tests: filter, Pane state (busy, idle, dead, `$SHELL` basename), Activity age formatting
-- [ ] Parsing tests for `list-panes` output with unusual window names
-- [ ] TestBackend tests for the filtering state and the Status bar hints
-- [ ] Real-tmux test: typing `cat` shows `cat` and not `category` unless it matches as a substring (substring semantics documented), selection stays on the same Session by name after a refresh
-- [ ] Real-tmux test: a Session with a busy pane and an idle pane shows the right counts
+- [x] Pure tests: filter, Pane state (busy, idle, dead, `$SHELL` basename), Activity age formatting
+- [x] Parsing tests for `list-panes` output with unusual window names
+- [x] TestBackend tests for the filtering state and the Status bar hints
+- [x] Real-tmux test: typing `cat` shows `cat` and not `category` unless it matches as a substring (substring semantics documented), selection stays on the same Session by name after a refresh
+- [x] Real-tmux test: a Session with a busy pane and an idle pane shows the right counts
 - [ ] Quality gates pass and the work is committed on `main`

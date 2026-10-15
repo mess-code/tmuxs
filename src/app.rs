@@ -1,7 +1,7 @@
 //! Application state and key handling. No terminal or tmux access here.
 
 use crate::attach::{NESTED_MESSAGE, is_nested};
-use crate::parse::Session;
+use crate::parse::{Session, matches_query};
 use crate::settings::Settings;
 use crate::tmux::TmuxError;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -9,8 +9,17 @@ use ratatui::widgets::TableState;
 
 #[derive(Debug, Default)]
 pub struct App {
+    /// Every Session tmux reported.
+    pub all_sessions: Vec<Session>,
+    /// The Sessions matching the Search query; these are the table rows.
     pub sessions: Vec<Session>,
     pub table_state: TableState,
+    /// The text typed into the always-focused search bar.
+    pub query: String,
+    /// Basename of `$SHELL`, used for Pane state.
+    pub shell: Option<String>,
+    /// Current time, epoch seconds, for Activity age. Set by the event loop.
+    pub now: u64,
     /// Set when tmux cannot be queried (for example tmux is not installed).
     pub error: Option<String>,
     pub should_quit: bool,
@@ -37,11 +46,24 @@ impl App {
 
     /// Replaces the Session list, keeping the selection on the same Session id.
     pub fn set_sessions(&mut self, sessions: Vec<Session>) {
+        self.all_sessions = sessions;
+        self.apply_query();
+    }
+
+    /// Recomputes the visible Sessions from the Search query, keeping the
+    /// selection on the same Session id when it is still visible.
+    fn apply_query(&mut self) {
         let selected_id = self.selected_session().map(|s| s.id.clone());
-        self.sessions = sessions;
+        let previous_index = self.table_state.selected();
+        self.sessions = self
+            .all_sessions
+            .iter()
+            .filter(|s| matches_query(&s.name, &self.query))
+            .cloned()
+            .collect();
         let index = selected_id
             .and_then(|id| self.sessions.iter().position(|s| s.id == id))
-            .or_else(|| self.table_state.selected())
+            .or(previous_index)
             .map(|i| i.min(self.sessions.len().saturating_sub(1)));
         self.table_state.select(if self.sessions.is_empty() {
             None
@@ -82,6 +104,14 @@ impl App {
             KeyCode::Down => self.move_selection(1),
             KeyCode::Char('k') if ctrl => self.move_selection(-1),
             KeyCode::Char('j') if ctrl => self.move_selection(1),
+            KeyCode::Backspace => {
+                self.query.pop();
+                self.apply_query();
+            }
+            KeyCode::Char(c) if !ctrl && !key.modifiers.contains(KeyModifiers::ALT) => {
+                self.query.push(c);
+                self.apply_query();
+            }
             _ => {}
         }
     }
@@ -123,8 +153,7 @@ mod tests {
         Session {
             id: id.into(),
             name: name.into(),
-            windows: 1,
-            attached: 0,
+            ..Session::default()
         }
     }
 
@@ -279,5 +308,94 @@ mod tests {
         assert!(app.error.is_some());
         app.set_result(Ok(vec![]));
         assert!(app.error.is_none());
+    }
+
+    fn type_str(app: &mut App, text: &str) {
+        for c in text.chars() {
+            app.handle_key(key(KeyCode::Char(c), KeyModifiers::NONE));
+        }
+    }
+
+    fn names(app: &App) -> Vec<&str> {
+        app.sessions.iter().map(|s| s.name.as_str()).collect()
+    }
+
+    #[test]
+    fn typing_narrows_the_table_and_backspace_widens_it() {
+        let mut app = app_with(&["cat", "Category", "dog"]);
+        type_str(&mut app, "CAT");
+        assert_eq!(app.query, "CAT");
+        assert_eq!(names(&app), ["cat", "Category"]);
+        type_str(&mut app, "x");
+        assert!(names(&app).is_empty());
+        assert!(app.selected_session().is_none());
+        app.handle_key(key(KeyCode::Backspace, KeyModifiers::NONE));
+        app.handle_key(key(KeyCode::Backspace, KeyModifiers::NONE));
+        assert_eq!(names(&app), ["cat", "Category"]);
+        for _ in 0..5 {
+            app.handle_key(key(KeyCode::Backspace, KeyModifiers::NONE));
+        }
+        assert_eq!(names(&app), ["cat", "Category", "dog"]);
+    }
+
+    #[test]
+    fn control_chords_do_not_edit_the_query() {
+        let mut app = app_with(&["a"]);
+        app.handle_key(key(KeyCode::Char('n'), KeyModifiers::CONTROL));
+        assert_eq!(app.query, "");
+    }
+
+    #[test]
+    fn selection_stays_on_the_same_session_while_filtering() {
+        let mut app = app_with(&["cat", "category", "dog"]);
+        app.handle_key(key(KeyCode::Down, KeyModifiers::NONE));
+        assert_eq!(app.selected_session().unwrap().name, "category");
+        type_str(&mut app, "cat");
+        assert_eq!(app.selected_session().unwrap().name, "category");
+        type_str(&mut app, "e");
+        assert_eq!(app.selected_session().unwrap().name, "category");
+        app.handle_key(key(KeyCode::Backspace, KeyModifiers::NONE));
+        app.handle_key(key(KeyCode::Backspace, KeyModifiers::NONE));
+        app.handle_key(key(KeyCode::Backspace, KeyModifiers::NONE));
+        app.handle_key(key(KeyCode::Backspace, KeyModifiers::NONE));
+        assert_eq!(app.selected_session().unwrap().name, "category");
+    }
+
+    #[test]
+    fn refresh_keeps_the_filter_and_the_selection() {
+        let mut app = app_with(&["cat", "category", "dog"]);
+        type_str(&mut app, "cat");
+        app.handle_key(key(KeyCode::Down, KeyModifiers::NONE));
+        app.set_sessions(vec![
+            session("$0", "cat"),
+            session("$1", "category"),
+            session("$2", "dog"),
+            session("$3", "caterpillar"),
+        ]);
+        assert_eq!(names(&app), ["cat", "category", "caterpillar"]);
+        assert_eq!(app.selected_session().unwrap().id, "$1");
+    }
+
+    #[test]
+    fn real_tmux_search_and_refresh_keep_the_selection_on_the_same_session() {
+        use crate::tmux::tests::TestServer;
+        let server = TestServer::start("tmuxs-test-search");
+        for name in ["category", "dog", "cat"] {
+            server.tmux(&["new-session", "-d", "-s", name]);
+        }
+        let mut app = App::default();
+        app.set_result(server.0.list_sessions());
+        // Substring semantics: `cat` matches `category` too, but never `dog`.
+        type_str(&mut app, "cat");
+        assert_eq!(names(&app), ["cat", "category"]);
+        app.handle_key(key(KeyCode::Down, KeyModifiers::NONE));
+        let category_id = app.selected_session().unwrap().id.clone();
+        assert_eq!(app.selected_session().unwrap().name, "category");
+
+        // A new Session sorts before the selected one; selection must not move.
+        server.tmux(&["new-session", "-d", "-s", "aaa-cat"]);
+        app.set_result(server.0.list_sessions());
+        assert_eq!(names(&app), ["aaa-cat", "cat", "category"]);
+        assert_eq!(app.selected_session().unwrap().id, category_id);
     }
 }
