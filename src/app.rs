@@ -2,6 +2,7 @@
 
 use crate::attach::{NESTED_MESSAGE, is_nested};
 use crate::parse::{Session, matches_query};
+use crate::popup::{Action, Done, Popup};
 use crate::settings::Settings;
 use crate::tmux::TmuxError;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -29,6 +30,12 @@ pub struct App {
     pub message: Option<String>,
     /// The Session id to Attach to; `events::run` takes it and spawns tmux.
     pub attach_request: Option<String>,
+    /// The open Popup, if any. While it is open, typing goes to it.
+    pub popup: Option<Popup>,
+    /// The tmux change a Popup asked for; `events::run_pending` executes it.
+    pub pending_action: Option<Action>,
+    /// The directory `tmuxs` was launched from, the create Popup's default.
+    pub launch_dir: String,
     settings: Settings,
     /// The value of `$TMUX`, passed in so the nested check is testable.
     tmux_env: Option<String>,
@@ -40,6 +47,9 @@ impl App {
             settings,
             iterm2_mode,
             tmux_env,
+            launch_dir: std::env::current_dir()
+                .map(|dir| dir.to_string_lossy().into_owned())
+                .unwrap_or_default(),
             ..Self::default()
         }
     }
@@ -94,7 +104,18 @@ impl App {
         }
         self.message = None;
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        if self.popup.is_some() {
+            self.handle_popup_key(key);
+            return;
+        }
         match key.code {
+            KeyCode::Char('r') if ctrl => self.open_rename(),
+            KeyCode::F(2) => self.open_rename(),
+            KeyCode::Char('n') if ctrl => {
+                self.popup = Some(Popup::create(&self.query, &self.launch_dir));
+            }
+            KeyCode::Char('x') if ctrl => self.open_kill(),
+            KeyCode::Delete => self.open_kill(),
             KeyCode::Enter => self.request_attach(),
             KeyCode::F(3) => self.toggle_iterm2_mode(),
             KeyCode::Char('t') if ctrl => self.toggle_iterm2_mode(),
@@ -113,6 +134,60 @@ impl App {
                 self.apply_query();
             }
             _ => {}
+        }
+    }
+
+    fn handle_popup_key(&mut self, key: KeyEvent) {
+        let Some(popup) = &mut self.popup else {
+            return;
+        };
+        if popup.cancels(key) {
+            self.popup = None;
+        } else {
+            self.pending_action = popup.handle_key(key);
+        }
+    }
+
+    fn open_rename(&mut self) {
+        if let Some(s) = self.selected_session() {
+            self.popup = Some(Popup::rename(&s.id, &s.name));
+        }
+    }
+
+    fn open_kill(&mut self) {
+        if let Some(s) = self.selected_session() {
+            self.popup = Some(Popup::kill(&s.id, &s.name));
+        }
+    }
+
+    /// Applies the outcome of the pending action, after the list was refreshed:
+    /// success closes the Popup, selects the affected Session and sets the
+    /// Status bar message; failure keeps the Popup open and shows the error in it.
+    pub fn finish_action(&mut self, result: Result<Done, TmuxError>) {
+        match result {
+            Ok(done) => {
+                self.popup = None;
+                self.message = Some(done.message.into());
+                if let Some(id) = done.select {
+                    self.select_id(&id);
+                }
+            }
+            Err(error) => {
+                if let Some(popup) = &mut self.popup {
+                    popup.set_error(error.to_string());
+                }
+            }
+        }
+    }
+
+    /// Selects a Session by id, clearing the Search query if it hides it.
+    fn select_id(&mut self, id: &str) {
+        if !self.sessions.iter().any(|s| s.id == id) {
+            self.query.clear();
+            self.apply_query();
+        }
+        if let Some(index) = self.sessions.iter().position(|s| s.id == id) {
+            self.table_state.select(Some(index));
         }
     }
 

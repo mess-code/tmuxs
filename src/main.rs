@@ -4,6 +4,7 @@ mod app;
 mod attach;
 mod events;
 mod parse;
+mod popup;
 mod settings;
 mod terminal;
 mod tmux;

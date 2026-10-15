@@ -2,12 +2,14 @@
 
 use crate::app::App;
 use crate::parse::{Session, format_age, window_summary};
+use crate::popup::{Field, Popup};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::widgets::{Block, Cell, HighlightSpacing, Paragraph, Row, Table};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Cell, Clear, HighlightSpacing, Paragraph, Row, Table, Wrap};
 
-const HINTS: &str = "(Esc) quit | (↑/↓, ctrl+k/ctrl+j) move | (Enter) attach | (ctrl+t/F3) iTerm2 mode | type to search";
+const HINTS: &str = "(Esc) quit | (↑/↓) move | (Enter) attach | (^N) new | (^R) rename | (^X) kill | (^T) iTerm2 mode | type to search";
 const EMPTY_HINT: &str = "No tmux sessions. Press Ctrl-N to create one.";
 const NO_MATCH_HINT: &str = "No sessions match the search.";
 
@@ -51,6 +53,97 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         summary_area,
     );
     frame.render_widget(Paragraph::new(status_line(app)).centered(), status_area);
+
+    if let Some(popup) = &app.popup {
+        render_popup(frame, popup, app.iterm2_mode);
+    }
+}
+
+const ITERM2_WARNING: &str = "iTerm2 mode is ON: this Session's iTerm2 tabs will close.";
+
+/// A centered dialog over everything else. The error, if any, is shown inside it.
+fn render_popup(frame: &mut Frame, popup: &Popup, iterm2_mode: bool) {
+    let label = |text: &str, active: bool| {
+        let style = if active {
+            Style::new().add_modifier(Modifier::BOLD)
+        } else {
+            Style::new()
+        };
+        Span::styled(format!("{text:<11}"), style)
+    };
+    let (title, mut lines, hint, cursor) = match popup {
+        Popup::Rename { input, .. } => (
+            " Rename session ",
+            vec![Line::from(vec![
+                label("New name:", true),
+                input.as_str().into(),
+            ])],
+            "Enter rename | Esc cancel",
+            Some((0, 11 + input.chars().count())),
+        ),
+        Popup::Create {
+            name, dir, field, ..
+        } => (
+            " Create session ",
+            vec![
+                Line::from(vec![
+                    label("Name:", *field == Field::Name),
+                    name.as_str().into(),
+                ]),
+                Line::from(vec![
+                    label("Directory:", *field == Field::Dir),
+                    dir.as_str().into(),
+                ]),
+            ],
+            "Enter create | Tab switch field | Esc cancel",
+            Some(match field {
+                Field::Name => (0, 11 + name.chars().count()),
+                Field::Dir => (1, 11 + dir.chars().count()),
+            }),
+        ),
+        Popup::Kill { name, .. } => {
+            let mut lines = vec![Line::from(format!("Kill session \"{name}\"?"))];
+            if iterm2_mode {
+                lines.push(Line::styled(ITERM2_WARNING, Style::new().fg(Color::Yellow)));
+            }
+            (
+                " Kill session ",
+                lines,
+                "y kill | N / Esc cancel (default: No)",
+                None,
+            )
+        }
+    };
+    if let Some(error) = popup.error() {
+        lines.push(Line::styled(error, Style::new().fg(Color::Red)));
+    }
+    lines.push(Line::styled(hint, Style::new().fg(Color::DarkGray)));
+
+    let area = frame.area();
+    let width = area.width.min(64);
+    let height = (lines.len() as u16 + 2 + 1).min(area.height);
+    let rect = Rect::new(
+        area.x + (area.width - width) / 2,
+        area.y + (area.height - height) / 2,
+        width,
+        height,
+    );
+    frame.render_widget(Clear, rect);
+    frame.render_widget(
+        Paragraph::new(lines).wrap(Wrap { trim: false }).block(
+            Block::bordered()
+                .title(title)
+                .padding(ratatui::widgets::Padding::horizontal(1)),
+        ),
+        rect,
+    );
+    if let Some((row, col)) = cursor {
+        // Border and padding take two columns; the first line starts under the top border.
+        frame.set_cursor_position(Position::new(
+            (rect.x + 2 + col as u16).min(rect.right().saturating_sub(2)),
+            rect.y + 1 + row as u16,
+        ));
+    }
 }
 
 /// The hints and the iTerm2 mode, or the latest result message instead of the hints.

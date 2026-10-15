@@ -83,6 +83,51 @@ impl Tmux {
         Ok(sessions)
     }
 
+    /// Creates a detached Session and returns its `$id`. An empty `dir` means
+    /// tmux's default. tmux accepts a missing directory, so it is checked here.
+    pub fn create_session(&self, name: &str, dir: &str) -> Result<String, TmuxError> {
+        let mut args = vec!["new-session", "-d", "-P", "-F", "#{session_id}", "-s", name];
+        let dir = expand_tilde(dir, std::env::var("HOME").ok().as_deref());
+        if !dir.is_empty() {
+            if !std::path::Path::new(&dir).is_dir() {
+                return Err(TmuxError::Failed(format!(
+                    "directory does not exist: {dir}"
+                )));
+            }
+            args.extend(["-c", &dir]);
+        }
+        self.run(&args).map(|id| id.trim().to_string())
+    }
+
+    pub fn rename_session(&self, id: &str, name: &str) -> Result<(), TmuxError> {
+        // `--` keeps a name that starts with `-` from being read as a flag.
+        self.run(&["rename-session", "-t", id, "--", name])
+            .map(drop)
+    }
+
+    pub fn kill_session(&self, id: &str) -> Result<(), TmuxError> {
+        self.run(&["kill-session", "-t", id]).map(drop)
+    }
+
+    /// Runs one tmux command and returns its stdout.
+    fn run(&self, args: &[&str]) -> Result<String, TmuxError> {
+        let output = self
+            .command()
+            .args(args)
+            .output()
+            .map_err(|e| match e.kind() {
+                ErrorKind::NotFound => TmuxError::NotInstalled,
+                _ => TmuxError::Failed(e.to_string()),
+            })?;
+        if output.status.success() {
+            Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+        } else {
+            Err(TmuxError::Failed(
+                String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            ))
+        }
+    }
+
     /// Lists the Panes of every Session. Any failure means no Pane data.
     fn list_panes(&self) -> Vec<crate::parse::Pane> {
         self.command()
@@ -92,6 +137,16 @@ impl Tmux {
             .filter(|output| output.status.success())
             .map(|output| parse_panes(&String::from_utf8_lossy(&output.stdout)))
             .unwrap_or_default()
+    }
+}
+
+/// Expands a leading `~` or `~/` to the home directory, when known.
+pub fn expand_tilde(dir: &str, home: Option<&str>) -> String {
+    match (home, dir.strip_prefix('~')) {
+        (Some(home), Some(rest)) if rest.is_empty() || rest.starts_with('/') => {
+            format!("{}{rest}", home.trim_end_matches('/'))
+        }
+        _ => dir.to_string(),
     }
 }
 
@@ -149,6 +204,51 @@ pub(crate) mod tests {
         fn drop(&mut self) {
             self.tmux(&["kill-server"]);
         }
+    }
+
+    #[test]
+    fn expands_a_leading_tilde_only() {
+        let home = Some("/Users/me");
+        assert_eq!(expand_tilde("~", home), "/Users/me");
+        assert_eq!(expand_tilde("~/work", home), "/Users/me/work");
+        assert_eq!(expand_tilde("~bob/x", home), "~bob/x");
+        assert_eq!(expand_tilde("/a/~/b", home), "/a/~/b");
+        assert_eq!(expand_tilde("~/work", None), "~/work");
+    }
+
+    #[test]
+    fn creates_renames_and_kills_by_id_with_stable_errors() {
+        let server = TestServer::start("tmuxs-test-actions");
+        let tmux = &server.0;
+        let a = tmux.create_session("alpha", "/tmp").unwrap();
+        let b = tmux.create_session("-dash.and:colon", "").unwrap();
+        assert!(a.starts_with('$') && a != b);
+
+        let failed = |r: Result<(), TmuxError>| r.unwrap_err().to_string();
+        assert!(
+            tmux.create_session("alpha", "")
+                .unwrap_err()
+                .to_string()
+                .ends_with("duplicate session: alpha")
+        );
+        let missing = tmux
+            .create_session("x", "/definitely/not/here")
+            .unwrap_err();
+        assert!(missing.to_string().contains("directory does not exist"));
+        assert!(tmux.create_session("f", "/etc/hosts").is_err());
+
+        tmux.rename_session(&b, "-new").unwrap();
+        assert!(failed(tmux.rename_session(&a, "-new")).ends_with("duplicate session: -new"));
+        assert!(failed(tmux.rename_session("$999", "z")).ends_with("can't find session: $999"));
+        tmux.kill_session(&a).unwrap();
+        assert!(failed(tmux.kill_session(&a)).ends_with(&format!("can't find session: {a}")));
+        let names: Vec<_> = tmux
+            .list_sessions()
+            .unwrap()
+            .into_iter()
+            .map(|s| s.name)
+            .collect();
+        assert_eq!(names, ["-new"]);
     }
 
     #[test]
