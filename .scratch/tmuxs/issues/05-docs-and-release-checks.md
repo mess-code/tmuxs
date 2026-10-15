@@ -4,11 +4,25 @@
 
 **Blocked by:** 02, 03, 04
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] All docs are in English and every listed page exists
-- [ ] A documented cross-check shows keys, flags and environment variables match the code
-- [ ] Unverified items are explicitly marked
-- [ ] `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test` and `cargo build --release` pass
-- [ ] Final report written, with the manual verification checklist
-- [ ] Committed on `main`
+- [x] All docs are in English and every listed page exists
+- [x] A documented cross-check shows keys, flags and environment variables match the code
+- [x] Unverified items are explicitly marked
+- [x] `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test` and `cargo build --release` pass
+- [x] Final report written, with the manual verification checklist
+- [x] Committed on `main`
+
+## Closing note
+
+Done. Added `README.md` and `docs/{index,usage,keybindings,iterm2-cc-mode,architecture,development,troubleshooting}.md` (`docs/agents/` untouched). The cross-check checklist is in `docs/development.md`; it found no code bugs, only doc/spec wording differences (selection by id, Directory column rule, missing tmux shown in the picker instead of exiting). Gates passed: fmt, clippy `--all-targets -D warnings`, 81 tests, release build. Install with `cargo install --path .` (not run).
+
+Manual checks for the owner (also in `docs/development.md`):
+
+- Attach with iTerm2 mode ON and OFF; detaching returns to the picker.
+- Toggle key in real iTerm2, including whether F3 (and F2) are intercepted.
+- How the UI looks in iTerm2.
+- Control window hidden when "Automatically bury the tmux client session after connecting" is enabled.
+- Popups on small terminals and the Status bar on narrow terminals.
+- A real `-CC` attach by id.
+- The panic hook, and the nested-tmux refusal in both modes.
